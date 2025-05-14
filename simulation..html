@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Single Slit Diffraction with Physics-style Graph</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Arial', sans-serif;
+      display: flex;
+      height: 100vh;
+      background: #121212;
+      color: #fff;
+      overflow: hidden;
+    }
+    #controls {
+      width: 300px;
+      padding: 20px;
+      background: rgba(30, 30, 40, 0.9);
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      backdrop-filter: blur(5px);
+      z-index: 10;
+      overflow-y: auto;
+    }
+    #canvas {
+      flex: 1;
+      background: radial-gradient(ellipse at center, #0a0e23 0%, #000000 100%);
+      position: relative;
+    }
+    #graph-container {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80%;
+      height: 220px;
+      background: rgba(10, 10, 20, 0.9);
+      border-radius: 4px;
+      border: 1px solid rgba(100, 150, 255, 0.3);
+    }
+    #intensity-graph {
+      width: 100%;
+      height: 100%;
+    }
+    .control-group {
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      color: #aaa;
+      font-size: 14px;
+    }
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      background: #333;
+      border-radius: 3px;
+      -webkit-appearance: none;
+      margin-bottom: 10px;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: #4af;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .value-display {
+      display: inline-block;
+      width: 40px;
+      text-align: right;
+      color: #4af;
+      font-weight: bold;
+    }
+    button {
+      padding: 10px 18px;
+      background: linear-gradient(135deg, #4a6fe2, #4a90e2);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 8px;
+      margin-bottom: 8px;
+      font-size: 14px;
+      transition: all 0.2s;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    h2 {
+      color: #4af;
+      margin-top: 0;
+      font-size: 18px;
+    }
+    .graph-toggle {
+      position: absolute;
+      bottom: 5px;
+      right: 5px;
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+    .graph-label {
+      position: absolute;
+      color: #aaa;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <h2>WAVE DIFFRACTION</h2>
+    <div class="control-group">
+      <label>WAVELENGTH: <span id="waveValue" class="value-display">50</span>px</label>
+      <input type="range" id="wavelength" min="10" max="100" value="50">
+      
+      <label>SLIT WIDTH: <span id="widthValue" class="value-display">30</span>px</label>
+      <input type="range" id="slitWidth" min="5" max="100" value="30">
+    </div>
+    <div class="control-group">
+      <label>WAVE SPEED: <span id="speedValue" class="value-display">1.0</span>x</label>
+      <input type="range" id="speed" min="0.1" max="2" value="1.0" step="0.1">
+    </div>
+    <div>
+      <button id="toggle">⏸ PAUSE</button>
+      <button id="glow">✨ GLOW MODE</button>
+    </div>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="graph-container">
+    <canvas id="intensity-graph"></canvas>
+    <div class="graph-label" style="bottom: 5px; left: 50%; transform: translateX(-50%);">θ (angle)</div>
+    <div class="graph-label" style="bottom: 50%; left: 10px; transform: rotate(-90deg) translateX(50%); transform-origin: left center;">Intensity (I)</div>
+    <button id="toggleGraph" class="graph-toggle">Hide Graph</button>
+  </div>
+
+  <script>
+    // Setup canvas
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const graphCanvas = document.getElementById('intensity-graph');
+    const graphCtx = graphCanvas.getContext('2d');
+    canvas.width = window.innerWidth - 300;
+    canvas.height = window.innerHeight;
+    graphCanvas.width = graphCanvas.offsetWidth;
+    graphCanvas.height = graphCanvas.offsetHeight;
+
+    // Simulation parameters
+    let time = 0;
+    let running = true;
+    let waveSpeed = 1.0;
+    let glowMode = false;
+    let showGraph = true;
+    const SOURCE_X = 50;
+    const BARRIER_X = canvas.width * 0.4;
+    const CENTER_Y = canvas.height / 2;
+    const MAX_WAVES = 20; // Maximum wave crests to draw
+
+    // Initialize
+    function init() {
+      setupEventListeners();
+      animate();
+    }
+
+    // Main animation loop
+    function animate() {
+      if (running) {
+        // Clear with semi-transparent black for trails
+        if (glowMode) {
+          ctx.fillStyle = 'rgba(0,0,10,0.03)';
+        } else {
+          ctx.fillStyle = 'rgba(0,0,0,0.08)';
+        }
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        drawBarrier();
+        drawWaves();
+        
+        if (showGraph) {
+          drawIntensityGraph();
+        }
+        
+        time += 0.02 * waveSpeed;
+      }
+      requestAnimationFrame(animate);
+    }
+
+    // Draw the barrier with slit
+    function drawBarrier() {
+      const slitWidth = parseInt(document.getElementById('slitWidth').value);
+      
+      // Barrier glow effect
+      if (glowMode) {
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = '#4af';
+      }
+      
+      // Barrier metal texture
+      const gradient = ctx.createLinearGradient(BARRIER_X - 15, 0, BARRIER_X + 15, 0);
+      gradient.addColorStop(0, '#333');
+      gradient.addColorStop(0.5, '#666');
+      gradient.addColorStop(1, '#333');
+      ctx.fillStyle = gradient;
+      
+      // Draw barrier
+      ctx.fillRect(BARRIER_X - 15, 0, 30, CENTER_Y - slitWidth/2);
+      ctx.fillRect(BARRIER_X - 15, CENTER_Y + slitWidth/2, 30, canvas.height);
+      
+      // Slit with light effect
+      const slitGradient = ctx.createLinearGradient(BARRIER_X - 10, CENTER_Y - slitWidth/2, BARRIER_X + 10, CENTER_Y + slitWidth/2);
+      slitGradient.addColorStop(0, 'rgba(100,150,255,0.3)');
+      slitGradient.addColorStop(0.5, 'rgba(150,200,255,0.8)');
+      slitGradient.addColorStop(1, 'rgba(100,150,255,0.3)');
+      ctx.fillStyle = slitGradient;
+      ctx.fillRect(BARRIER_X - 10, CENTER_Y - slitWidth/2, 20, slitWidth);
+      
+      ctx.shadowBlur = 0;
+    }
+
+    // Draw all waves
+    function drawWaves() {
+      const wavelength = parseInt(document.getElementById('wavelength').value);
+      const slitWidth = parseInt(document.getElementById('slitWidth').value);
+      
+      // Incident waves (left of barrier)
+      drawIncidentWaves(wavelength);
+      
+      // Diffracted waves (right of barrier)
+      drawDiffractedWaves(wavelength, slitWidth);
+    }
+
+    // Draw incoming plane waves with cool effect
+    function drawIncidentWaves(wavelength) {
+      // Calculate how many complete waves to draw
+      const wavesToDraw = Math.min(MAX_WAVES, Math.floor((BARRIER_X - SOURCE_X) / wavelength));
+      
+      for (let i = 0; i < wavesToDraw; i++) {
+        const x = SOURCE_X + (i * wavelength) + (time * waveSpeed * 10) % wavelength;
+        if (x < BARRIER_X - 15) {
+          // Wave gradient effect
+          const gradient = ctx.createLinearGradient(x, 0, x, canvas.height);
+          gradient.addColorStop(0, 'rgba(100,200,255,0.1)');
+          gradient.addColorStop(0.5, 'rgba(150,220,255,0.7)');
+          gradient.addColorStop(1, 'rgba(100,200,255,0.1)');
+          
+          ctx.strokeStyle = gradient;
+          ctx.lineWidth = 2 + Math.sin(time + i) * 0.5; // Pulsing effect
+          
+          if (glowMode) {
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = 'rgba(100,200,255,0.7)';
+          }
+          
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, canvas.height);
+          ctx.stroke();
+          
+          ctx.shadowBlur = 0;
+        }
+      }
+    }
+
+    // Draw circular diffracted waves with cool effects
+    function drawDiffractedWaves(wavelength, slitWidth) {
+      // Calculate how many wave cycles have passed through slit
+      const cycles = Math.min(10, Math.floor((time * waveSpeed * 10) / wavelength));
+      
+      // Draw wavefronts emanating from slit
+      for (let c = 0; c < cycles; c++) {
+        const radius = ((time * waveSpeed * 10) % wavelength) + (c * wavelength);
+        const alpha = 0.7 - (c/cycles)*0.6; // Fade out older waves
+        
+        // Draw multiple point sources across slit width
+        const pointSources = Math.max(3, Math.floor(slitWidth / 10));
+        for (let p = 0; p < pointSources; p++) {
+          const y = CENTER_Y - slitWidth/2 + (p * slitWidth/pointSources);
+          
+          // Color gradient based on position
+          const hue = 200 + (p * 30/pointSources);
+          ctx.strokeStyle = `hsla(${hue}, 80%, 60%, ${alpha})`;
+          ctx.lineWidth = 1.5;
+          
+          if (glowMode) {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = `hsla(${hue}, 80%, 60%, ${alpha*0.5})`;
+          }
+          
+          ctx.beginPath();
+          // Only draw the forward-facing part of the wave
+          ctx.arc(BARRIER_X, y, radius, -Math.PI/2, Math.PI/2);
+          ctx.stroke();
+          
+          ctx.shadowBlur = 0;
+        }
+      }
+    }
+
+    // Draw the intensity graph in physics style
+    function drawIntensityGraph() {
+      const wavelength = parseInt(document.getElementById('wavelength').value);
+      const slitWidth = parseInt(document.getElementById('slitWidth').value);
+      const graphHeight = graphCanvas.height;
+      const graphWidth = graphCanvas.width;
+      const centerX = graphWidth / 2;
+      const padding = 30;
+      const plotHeight = graphHeight - padding * 2;
+      const plotWidth = graphWidth - padding * 2;
+      
+      // Clear graph
+      graphCtx.fillStyle = 'rgba(10, 10, 20, 0.9)';
+      graphCtx.fillRect(0, 0, graphWidth, graphHeight);
+      
+      // Draw axes
+      graphCtx.strokeStyle = '#4af';
+      graphCtx.lineWidth = 1;
+      
+      // X-axis
+      graphCtx.beginPath();
+      graphCtx.moveTo(padding, graphHeight - padding);
+      graphCtx.lineTo(graphWidth - padding, graphHeight - padding);
+      graphCtx.stroke();
+      
+      // Y-axis
+      graphCtx.beginPath();
+      graphCtx.moveTo(padding, padding);
+      graphCtx.lineTo(padding, graphHeight - padding);
+      graphCtx.stroke();
+      
+      // Draw tick marks and labels
+      graphCtx.fillStyle = '#aaa';
+      graphCtx.font = '10px Arial';
+      graphCtx.textAlign = 'center';
+      
+      // X-axis ticks (angle)
+      const maxAngle = Math.PI / 4; // ±π/4 radians
+      for (let angle = -maxAngle; angle <= maxAngle; angle += maxAngle/4) {
+        const x = padding + (angle + maxAngle) * (plotWidth / (2 * maxAngle));
+        graphCtx.beginPath();
+        graphCtx.moveTo(x, graphHeight - padding);
+        graphCtx.lineTo(x, graphHeight - padding + 5);
+        graphCtx.stroke();
+        
+        // Label angles in degrees
+        const degAngle = Math.round(angle * 180 / Math.PI);
+        graphCtx.fillText(degAngle + '°', x, graphHeight - padding + 18);
+      }
+      
+      // Y-axis ticks (intensity)
+      graphCtx.textAlign = 'right';
+      for (let i = 0; i <= 1; i += 0.2) {
+        const y = graphHeight - padding - (i * plotHeight);
+        graphCtx.beginPath();
+        graphCtx.moveTo(padding, y);
+        graphCtx.lineTo(padding - 5, y);
+        graphCtx.stroke();
+        
+        graphCtx.fillText(i.toFixed(1), padding - 8, y + 3);
+      }
+      
+      // Draw the intensity curve
+      graphCtx.beginPath();
+      graphCtx.strokeStyle = '#4af';
+      graphCtx.lineWidth = 2;
+      
+      for (let x = 0; x < plotWidth; x++) {
+        // Convert x position to angle (-maxAngle to +maxAngle)
+        const angle = -maxAngle + (x / plotWidth) * (2 * maxAngle);
+        
+        // Calculate intensity (single slit diffraction formula)
+        const β = (Math.PI * slitWidth * Math.sin(angle)) / wavelength;
+        let intensity = slitWidth > 0 ? Math.pow(Math.sin(β)/β, 2) : 1;
+        intensity = isNaN(intensity) ? 1 : intensity;
+        
+        // Map intensity to y position
+        const plotX = padding + x;
+        const plotY = graphHeight - padding - (intensity * plotHeight);
+        
+        if (x === 0) {
+          graphCtx.moveTo(plotX, plotY);
+        } else {
+          graphCtx.lineTo(plotX, plotY);
+        }
+      }
+      
+      graphCtx.stroke();
+      
+      // Mark zeros and maxima
+      graphCtx.fillStyle = '#f44';
+      graphCtx.font = '10px Arial';
+      graphCtx.textAlign = 'center';
+      
+      // Central maximum
+      graphCtx.beginPath();
+      graphCtx.arc(centerX, graphHeight - padding - plotHeight, 3, 0, Math.PI * 2);
+      graphCtx.fill();
+      graphCtx.fillText('Central max', centerX, graphHeight - padding - plotHeight - 10);
+      
+      // First minima (zeros)
+      if (slitWidth > 0 && wavelength > 0) {
+        const firstMinAngle = Math.asin(wavelength / slitWidth);
+        if (Math.abs(firstMinAngle) < maxAngle) {
+          const minX1 = padding + (maxAngle - firstMinAngle) * (plotWidth / (2 * maxAngle));
+          const minX2 = padding + (maxAngle + firstMinAngle) * (plotWidth / (2 * maxAngle));
+          
+          graphCtx.beginPath();
+          graphCtx.arc(minX1, graphHeight - padding, 3, 0, Math.PI * 2);
+          graphCtx.arc(minX2, graphHeight - padding, 3, 0, Math.PI * 2);
+          graphCtx.fill();
+          
+          graphCtx.fillText('Minima', minX1, graphHeight - padding - 10);
+          graphCtx.fillText('Minima', minX2, graphHeight - padding - 10);
+        }
+      }
+    }
+
+    // Event listeners
+    function setupEventListeners() {
+      document.getElementById('toggle').addEventListener('click', () => {
+        running = !running;
+        document.getElementById('toggle').textContent = running ? '⏸ PAUSE' : '▶ PLAY';
+      });
+
+      document.getElementById('glow').addEventListener('click', () => {
+        glowMode = !glowMode;
+        document.getElementById('glow').textContent = glowMode ? '☀️ GLOW ON' : '✨ GLOW MODE';
+      });
+
+      document.getElementById('toggleGraph').addEventListener('click', () => {
+        showGraph = !showGraph;
+        document.getElementById('graph-container').style.display = showGraph ? 'block' : 'none';
+        document.getElementById('toggleGraph').textContent = showGraph ? 'Hide Graph' : 'Show Graph';
+      });
+
+      document.getElementById('speed').addEventListener('input', (e) => {
+        waveSpeed = parseFloat(e.target.value);
+        document.getElementById('speedValue').textContent = e.target.value;
+      });
+
+      document.querySelectorAll('input[type="range"]').forEach(input => {
+        input.addEventListener('input', (e) => {
+          document.getElementById(e.target.id + 'Value').textContent = e.target.value;
+        });
+      });
+
+      window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth - 300;
+        canvas.height = window.innerHeight;
+        graphCanvas.width = graphCanvas.offsetWidth;
+        graphCanvas.height = graphCanvas.offsetHeight;
+      });
+    }
+
+    // Start simulation
+    init();
+  </script>
+</body>
+</html>
